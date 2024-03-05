@@ -1,244 +1,225 @@
 # MIMPI
 
 [MPI](https://pl.wikipedia.org/wiki/Message_Passing_Interface)
-to standardowy protokół komunikacyjny służący do wymieniania danych
-między procesami programów równoległych, używany przede wszystkim w obliczeniach superkomputerowych.
-Celem zadania, jak sugeruje nazwa _MIMPI_ - będąca skrótem od _My Implementation of MPI_ - jest
-zaimplementowanie drobnego, nieco zmodyfikowanego fragmentu MPI.
-Należy napisać według poniższej specyfikacji zarówno:
+is a standard communication protocol used to exchange data between processes in parallel programs,
+primarily used in supercomputing. 
+The goal of the task, as suggested by the name `MIMPI` - which stands for My Implementation of MPI - is to implement a small,
+slightly modified fragment of MPI. According to the specifications below, you need to write:
 
-- kod programu `mimpirun` (w `mimpirun.c`) uruchamiający obliczenia równoległe,
-- implementację `mimpi.c` procedur zadeklarowanych w `mimpi.h`.
+- The code of the `mimpirun` program (in `mimpirun.c`) for running parallel computations,
+- Implementation of the procedures declared in `mimpi.h` in the `mimpi.c` file.
 
-## Program `mimpirun`
+## `Mimpirun` program
 
-Program `mimpirun` przyjmuje następujące argumenty linii poleceń:
+The `mimpirun` program accepts the following command line arguments:
 
-1) $n$ - liczba kopii do uruchomienia (można założyć, że przekazana zostanie liczba naturalna z zakresu od 1 do $16$ włącznie)
-2) $prog$ - ścieżka do pliku wykonywalnego (może się znajdować w PATH).
-   W przypadku, gdy odpowiednie wywołanie `exec` się nie powiedzie (np. z powodu niepoprawnej ścieżki)
-   należy zakończyć działanie `mimpirun` z niezerowym kodem wyjściowym.
-3) $args$ - opcjonalnie i w dowolnej ilości argumenty do przekazania wszystkim uruchamianym programom $prog$
+- $n$ - the number of copies to run (it can be assumed that a natural number from 1 to 16, inclusive, will be provided).
+- $prog$ - the path to the executable file (it may be located in the `PATH`).
+- In case the appropriate exec call fails (e.g., due to an incorrect path),
+`mimpirun` should terminate with a non-zero exit code.
+- $args$ - optionally, and in any quantity, arguments to be passed to all the executed $prog$ programs.
 
-Program `mimpirun` po kolei (następna czynność jest rozpoczynana po całkowitym zakończeniu poprzedniej):
+The `mimpirun` program performs the following actions sequentially 
+(the next action starts after the previous one is completely finished):
 
-1) Przygotowuje środowisko (w zakresie implementującego jest zdecydowanie, co to znaczy).
-2) Uruchamia $n$ kopii programu $prog$, każdą w osobnym procesie.
-3) Czeka na zakończenie wszystkich utworzonych procesów.
-4) Kończy działanie.
+1) Prepares the environment (the implementer should definitely decide what this means).
+2) Launches $n$ copies of the program $prog$, each in a separate process.
+3) Waits for the completion of all created processes.
+3) Exits.
 
-## Założenia o programach $prog$
+## $Prog$ assumptions
+- The programs $prog$ can once during their execution enter an MPI block.
+To achieve this, they call the library function `MIMPI_Init` at the beginning,
+and they execute the library function `MIMPI_Finalize` at the end.
+An MPI block refers to the entire code fragment between the aforementioned calls.
+- While in the MPI block, programs can execute various procedures from the `mimpi` library to communicate with other processes $prog$.
+- They can perform any operations (write, read, open, close, etc.) on files whose file descriptor numbers are in the ranges $[0,19]$ and $[1024, \infty)$
+(including STDIN, STDOUT, and STDERR).
+- They do not modify the values of environment variables starting with the prefix `MIMPI`.
+- They expect correctly set arguments, meaning the zeroth argument according to the Unix convention should be the name of the program $prog$,
+while subsequent arguments should correspond to the arguments $args$.
 
-- Programy $prog$ mogą **jednokrotnie** w czasie swojego działania przejść do _bloku MPI_.
-Aby tego dokonać wywołują na początku funkcję biblioteczną `MIMPI_Init`,
-a na jego końcu wykonują funkcję biblioteczną `MIMPI_Finalize`. Jako wspomniany _blok MPI_
-rozumie się cały fragment kodu pomiędzy w/w wywołaniami.
-- Będąc w _bloku MPI_, programy mogą wykonywać różne procedury z biblioteki `mimpi`
-celem komunikacji z innymi procesami $prog$.
-- Mogą wykonywać dowolne operacje (zapis, odczyt, otwarcie, zamknięcie, itp.) na plikach,
-  których numery deskryptorów są z zakresów $[0,19]$ i $[1024, \infty)$
-  (w szczególności na `STDIN`, `STDOUT` i `STDERR`).
-- Nie modyfikują wartości zmiennych środowiskowych zaczynających się od prefiksu `MIMPI`.
-- Oczekują prawidłowo ustawionych argumentów,
-tzn. zerowy argument zgodnie z uniksową konwencją powinien być nazwą programu $prog$,
-natomiast następne argumenty powinny odpowiadać argumentom $args$.
-_Wskazówka:_ aby przekazać dodatkowe dane z `mimpirun` do $prog$ można posłużyć się funkcjami z rodziny `*env`: `getenv`, `setenv`, `putenv`.
+## `Mimpi` library
 
-## Biblioteka `mimpi`
+You need to implement the following procedures with signatures from the header file `mimpi.h`:
 
-Należy zaimplementować następujące procedury o sygnaturach z pliku nagłówkowego `mimpi.h`:
-
-### Procedury pomocnicze
+### Helper procedures
 
 - `void MIMPI_Init(bool enable_deadlock_detection)`
 
-  Otwiera _blok MPI_, inicjalizując potrzebne dla działania biblioteki `mimpi` zasoby.
-  Flaga `enable_deadlock_detection` włącza wykrywanie zakleszczeń do końca _bloku MPI_ (opis poniżej w **Usprawnienie4**).
+Opens the MPI block by initializing the resources needed for the `mimpi` library to function.
+The `enable_deadlock_detection` flag enables deadlock detection until the end of the MPI block (described below in Enhancement 4).
 
 - `void MIMPI_Finalize()`
+Ends the _MPI block_.
+All resources associated with the operation of the `mimpi` library:
 
-  Kończy _blok MPI_.
-  Wszystkie zasoby związane z działaniem biblioteki `mimpi`:
-  - otwarte pliki
-  - otwarte kanały komunikacyjne
-  - zaalokowana pamięć
-  - prymitywy synchronizacyjne
-  - itp.
-  
-  powinny być zwolnione przed zakończeniem tej procedury.
+- open files
+- open communication channels
+- allocated memory
+- synchronization primitives 
+etc. should be released before completing this procedure.
 
 - `int MIMPI_World_size()`
+Returns the number of processes $prog$ launched using the `mimpirun` program (should be equal to the parameter $n$ passed to the `mimpirun` call).
 
-  Zwraca liczbę procesów $prog$ uruchomionych z użyciem programu `mimpirun` (powinno być równe parametrowi $n$ przekazanemu do wywołania `mimpirun`).
 
 - `void MIMPI_World_rank()`
+Returns a unique identifier within the group of processes launched by mimpirun.
+Identifiers should be consecutive natural numbers from $0$ to $n-1$.
 
-  Zwraca unikatowy w ramach grupy procesów uruchomionych przez `mimpirun` identyfikator.
-  Identyfikatory powinny być kolejnymi liczbami naturalnymi od $0$ do $n-1$.
-
-### Procedury do komunikacji punkt-punkt
+### Point-to-point communication procedures
 
 - `MIMPI_Retcode MIMPI_Send(void const *data, int count, int destination, int tag)`
 
-  Wysyła dane spod adresu `data`, interpretując je jako tablicę bajtów o wielkości `count`,
-  do procesu o randze `destination`, opatrując wiadomość znacznikiem `tag`.
+Sends data from the address data, interpreting it as an array of bytes of size count,
+to the process with rank destination, tagging the message with tag.
 
-  Wykonanie `MIMPI_Send` na rzecz procesu, który już opuścił _blok MPI_ powinno
-  zakończyć się natychmiastowym niepowodzeniem zwracając kod błędu `MIMPI_ERROR_REMOTE_FINISHED`.
-  Nie należy przejmować się sytuacją, w której proces na rzecz którego wykonane zostało
-  `MIMPI_Send` zakończy działanie później (po pomyślnym zakończeniu funkcji `MIMPI_send` w procesie wysyłającym).
+Executing `MIMPI_Send` for a process that has already left the MPI block should
+immediately fail with the error code `MIMPI_ERROR_REMOTE_FINISHED`.
+There is no need to worry if the process for which `MIMPI_Send` was executed
+terminates later (after the successful completion of the `MIMPI_Send` function in the sending process).
 
 - `MIMPI_Retcode MIMPI_Recv(void *data, int count, int source, int tag)`
 
-  Czeka na wiadomość o wielkości (dokładnie) `count` i znaczniku `tag` od procesu
-  o randze `rank` i zapisuje jej zawartość pod adresem `data`
-  (w gestii wołającego jest zapewnienie odpowiedniej ilości zaalokowanej pamięci).
-  Wywołanie jest blokujące, tzn. kończy się dopiero po otrzymaniu całej wiadomości.
+Waits for a message of size (exactly) count and tag tag from the process
+with rank rank and stores its contents at the address data
+(the caller is responsible for providing the appropriate amount of allocated memory).
+The call is blocking, meaning it only finishes after receiving the entire message.
 
-  Wykonanie `MIMPI_Recv` na rzecz procesu, który
-  nie wysłał pasującej wiadomości i opuścił już _blok MPI_ powinno
-  zakończyć się niepowodzeniem zwracając kod błędu `MIMPI_ERROR_REMOTE_FINISHED`.
-  Podobne zachowanie jest oczekiwane nawet w sytuacji gdy drugi proces opuści _blok MPI_
-  już podczas czekania na `MIMPI_Recv`.
+Executing `MIMPI_Recv` for a process that
+did not send a matching message and has already left the MPI block should
+fail with the error code `MIMPI_ERROR_REMOTE_FINISHED`.
+Similar behavior is expected even if the second process leaves the MPI block
+while waiting for `MIMPI_Recv`.
 
-  - Wersja podstawowa: można zakładać, że każdy z procesów wysyła komunikaty w dokładnie takiej kolejności,
-    w jakiej odbiorca chce je odbierać. **Nie można** natomiast zakładać, że wiele procesów **nie wyśle** równocześnie wiadomości do jednego odbiorcy. Można zakładać, że dane powiązane z jedną wiadomością są nie większe niż 512 bajtów.
-  - **Usprawnienie1**: Przesyłane wiadomości mogą być dowolnie (rozsądnie) duże, w szczególności większe niż bufor łącza (`pipe`).
-  - **Usprawnienie2**: Nie można zakładać nic o kolejności wysłanych pakietów.
-    Odbiorca powinien być w stanie buforować przychodzące pakiety, a w momencie wywołania `MIMPI_Recv` zwracać pierwszą
-    (ze względu na czas przyjścia) wiadomość pasującą parametrami `count`, `source` i `tag`
-    (nie trzeba implementować bardzo wymyślnego mechanizmu wybierania następnego pasującego pakietu;
-    złożoność liniowa względem liczby wszystkich jeszcze nieprzetworzonych przez docelowy proces pakietów
-    jest w zupełności wystarczająca).
-  - **Usprawnienie3**: Odbiorca powinien przetwarzać przysyłane wiadomości
-    współbieżnie z wykonywaniem innych czynności, tak by nie doszło do przepełnienia kanałów do wysyłania wiadomości.
-    Innymi słowy wysłanie dużej ilości wiadomości nie jest blokujące nawet jeśli docelowy odbiorca ich nie przetwarza (ponieważ trafiają do wciąż rosnącego bufora).
-  - **Usprawnienie4**: Zakleszczenie to sytuacja,
-    w której część systemu znalazła się w stanie, który nie ma już żadnej możliwości się zmienić
-    (nie istnieje taka sekwencja możliwych przyszłych zachowań procesów, które by to zakleszczenie rozwiązywały).
-    Zakleszczenie pary procesów to
-    sytuacja, w których zakleszczenie jest spowodowane stanem dwóch procesów
-    (rozważając czy można je przerwać dopuszczamy dowolne akcje procesów spoza pary - nawet takie, które nie są dozwolone w ich bieżącym stanie).
+  - Basic version: It can be assumed that each process sends messages in exactly the order in which the recipient wants to receive them.
+  However, it cannot be assumed that multiple processes do not send messages simultaneously to one recipient. 
+  It can be assumed that data associated with one message is no larger than 512 bytes.
+  - **Enhancement 1**: 
+  The transmitted messages can be arbitrarily (reasonably) large, especially larger than the link buffer size (pipe). 
+  - **Enhancement 2**: 
+   Nothing can be assumed about the order of sent packets. 
+   The recipient should be able to buffer incoming packets and, when calling `MIMPI_Recv`, return the first (in terms of arrival time)
+   message matching the count, source, and tag parameters (there is no need to implement a very sophisticated mechanism for selecting the next matching packet;
+   linear complexity with respect to the number of all unprocessed packets by the target process is sufficient). 
+  - **Enhancement 3**:  
+   The recipient should process received messages concurrently with performing other tasks to prevent message sending channels from overflowing. 
+   In other words, sending a large number of messages is not blocking even if the receiving target does not process them
+   (because they go to a growing buffer).
+    **Enhancement4**: 
+    Deadlock is a situation where a part of the system has reached a state where there is no possibility for further change 
+    (there exists no sequence of possible future actions of processes that could resolve this deadlock). 
+    Deadlock of a pair of processes is a situation where the deadlock arises from the current state of two processes 
+    (considering whether they can be interrupted, we allow any actions of processes outside the pair - even those that are not allowed in their current state).
+    Examples of certain situations constituting deadlocks of pairs of processes in our system include:
+    - A pair of processes has mutually executed `MIMPI_Recv` on each other without previously sending a message using `MIMPI_Send` that could end the waiting for either of them.
+    - One of the processes is waiting for a message from a process that is already waiting for synchronization related to the invocation of a procedure for group communication.
+    
+    As part of this enhancement, at least detection of deadlocks of type 1) should be implemented. 
+    Detection of deadlocks of other types will not be checked (but can be implemented). Deadlocks should not be reported in situations where they are not present.
+    In case a deadlock is detected, the active invocation of the library function `MIMPI_Recv` in both processes of the detected deadlock pair should immediately terminate,
+    returning the error code `MIMPI_ERROR_DEADLOCK_DETECTED`.
+    In the event of multiple deadlocked pairs occurring simultaneously, the invocation of the library function `MIMPI_Recv` 
+    should be terminated in each process of each deadlocked pair.
 
-    Przykłady pewnych sytuacji będącymi zakleszczeniami par procesów w naszym systemie to:
-    1) para procesów wykonała wzajemnie na siebie `MIMPI_Recv` nie wysyłając uprzednio z użyciem `MIMPI_Send` wiadomości, która może zakończyć czekanie któregokolwiek z nich
-    2) jeden z procesów czeka na wiadomość od procesu,
-    który czeka już na synchronizację związaną z wywołaniem procedury do komunikacji grupowej
+Detecting deadlocks may require sending multiple auxiliary messages, which can significantly slow down the system.
+Therefore, this functionality can be enabled and disabled during the execution of the entire MPI block by setting the appropriate
+value of the enable_deadlock detection flag in the `MIMPI_Init` call that initiates this block.
+The behavior when deadlock detection is enabled only in some processes of the current execution of `mimpirun` is undefined.
 
-    W ramach tego usprawnienia należy zaimplementować przynajmniej wykrywanie zakleszczeń par typu 1).
-    Wykrywanie zakleszczeń innych typów nie będzie sprawdzane (można je zaimplementować).
-    Nie należy natomiast zgłaszać zakleszczeń w sytuacjach, które zakleszczeniami nie są.
+### Collective Communication Procedures
 
-    W przypadku wykrycia zakleszczenia aktywne wywołanie funkcji bibliotecznej `MIMPI_Recv` w **obu procesach** wykrytego zakleszczenia pary powinno natychmiast się zakończyć zwracając kod błędu `MIMPI_ERROR_DEADLOCK_DETECTED`.
+#### General Requirements
 
-    W przypadku wystąpienia wielu zakleszczonych par jednocześnie należy przerwać wywołanie funkcji bibliotecznej `MIMPI_Recv`
-    w każdym procesie każdej zakleszczonej pary.
+Each collective communication procedure $p$ serves as a synchronization point for all processes, meaning that instructions following the $i$-th invocation of $p$ in any process are executed after every instruction preceding the $i$-th invocation of $p$ in any other process.
 
-    Detekcja zakleszczeń może do działania wymagać wysyłania wielu pomocniczych komunikatów, co może istotnie spowalniać działanie systemu.
-    Dlatego funkcjonalność tę można włączać i wyłączać na czas działania całego _bloku MPI_ ustawiając odpowiednią wartość flagi `enable_deadlock detection` w wywołaniu `MIMPI_Init` rozpoczynającym ten blok.
+If synchronization of all processes cannot be completed because one of the processes has already exited the MPI block, calling `MIMPI_Barrier` in at least one process should result in the error code `MIMPI_ERROR_REMOTE_FINISHED`.
+If the process in which this occurs terminates in response to the error, calling `MIMPI_Barrier` should result in the error in at least one subsequent process.
+By repeating the above behavior, we should reach a situation where each process exits the barrier with an error.
 
-    Działanie w przypadku, gdy detekcję zakleszczeń włączono jedynie w niektórych procesach aktualnego wykonania `mimpirun` jest niezdefiniowane.
+#### Efficiency
 
-    **Uwaga**: _usprawnienie4_ (wykrywanie zakleszczeń) wymaga usprawnienia2 (filtrowanie wiadomości). Częściowe wykrywanie zakleszczeń - bez implementacji _usprawnienia2_ - będzie oceniane na 0 punktów.
+Each collective communication procedure $p$ should be implemented efficiently.
+Specifically, assuming deadlock detection is inactive, we require that from the time $p$ is invoked by the last process to the time $p$ is completed in the last process, no more than $3\left \lceil\log_2(n+1)-1 \right \rceil t+\epsilon$ time where:
 
-### Procedury do komunikacji grupowej
+- $n$ is a number of processes
+- $t$  is the longest time to transmit a single message - the sum of the execution times of corresponding `chsend` and `chrecv` calls. Additional information can be found in the example implementation `channel.c` and in the provided tests in the `tests/effectiveness` directory.
+- $\epsilon$ is a small constant (on the order of at most milliseconds) that does not depend on $t$.
 
-#### Wymagania ogólne
+Additionally, for an implementation to be considered efficient, transmitted data should not be burdened with excessive metadata.
+In particular, we expect that collective functions invoked for data sizes smaller than 256 bytes will invoke `chsend` and `chrecv` for packets of size smaller than or equal to 512 bytes.
 
-Każda procedura $p$ do komunikacji grupowej stanowi **punkt synchronizacyjny** wszystkich procesów,
-tzn. instrukcje następujące po $i$-tym wywołaniu $p$ w dowolnym procesie wykonują się **po** każdej instrukcji poprzedzającej $i$-te wywołanie $p$ w dowolnym innym procesie.
+Tests from the `tests/effectiveness directory` included in the package verify the above-defined notion of efficiency.
+Passing them successfully is a necessary condition (though not necessarily sufficient) to earn points for an efficient implementation of collective functions.
 
-W przypadku, jeśli synchronizacja wszystkich procesów nie może się zakończyć,
-bo któryś z procesów opuścił już _blok MPI_, wywołanie `MIMPI_Barrier` w przynajmniej jednym procesie
-powinno zakończyć się kodem błędu `MIMPI_ERROR_REMOTE_FINISHED`.
-Jeśli proces, w którym się tak stanie w reakcji na błąd sam zakończy działanie,
-wywołanie `MIMPI_Barrier` powinno zakończyć się w przynajmniej jednym następnym procesie.
-Powtarzając powyższe zachowanie, powinniśmy dojść do sytuacji, w której każdy proces
-opuścił barierę z błędem.
-
-#### Efektywność
-
-Każda procedura $p$ do komunikacji grupowej powinna być zrealizowana efektywnie.
-Dokładniej, przy założeniu, że detekcja zakleszczeń jest nieaktywna, wymagamy aby od czasu wywołania $p$ przez ostatni proces
-do czasu zakończenia $p$ w ostatnim procesie minęło co najwyżej $3\left \lceil\log_2(n+1)-1 \right \rceil t+\epsilon$ czasu gdzie:
-
-- $n$ to liczba procesów
-- $t$ to najdłuższy czas przesłania pojedynczej wiadomości - suma czasów wykonania pary odpowiadających sobie wywołań `chsend` i `chrecv`. Dodatkowe informacje można wyczytać z przykładowej implementacji `channel.c` i z zapewnionych testów z katalogu `tests/effectiveness`
-- $\epsilon$ to nieduża stała (rzędu co najwyżej milisekund), która nie zależy od $t$.
-
-Dodatkowo aby implementacja została uznana za efektywną przesyłane dane nie powinny być
-opatrzone za dużą liczbą metadanych.
-W szczególności oczekujemy, że funkcje grupowe wywołane dla danych wielkości
-mniejszej niż 256 bajtów będą wywoływać `chsend` i `chrecv` na rzecz pakietów
-wielkości mniejszej lub równej niż 512 bajtów.
-
-Testy z katalogu `tests/effectiveness` dołączone w paczce sprawdzają powyżej zdefiniowane pojęcie efektywności.
-Przejście ich pozytywnie jest warunkiem koniecznym (choć niekoniecznie wystarczającym)
-do zdobycia punktów za efektywną implementację funkcji grupowych.
-
-#### Dostępne procedury
+#### Available Procedures
 
 - `MIMPI_Retcode MIMPI_Barrier()`
 
-  Przeprowadza synchronizację wszystkich procesów.
+  Performs synchronization of all processes.
 
 - `MIMPI_Retcode MIMPI_Bcast(void *data, int count, int root)`
 
-  Wysyła dane zapewnione przez proces o randze `root` do wszystkich pozostałych procesów.
+  Sends data provided by the process with rank root to all other processes.
 
 - `MIMPI_Retcode MIMPI_Reduce(const void *send_data, void *recv_data, int count, MPI_Op op, int root)`
 
-  Zbiera dane zapewnione przez wszystkie procesy w `send_data`
-  (traktując je jak tablicę liczb typu `uint8_t` wielkości `count`)
-  i przeprowadza na elementach o tych samych indeksach
-  z tablic `send_data` wszystkich procesów (również `root`) redukcję typu `op`.
-  Wynik redukcji, czyli tablica typu `uint8_t` wielkości `count`,
-  jest zapisywany pod adres `recv_data` **wyłącznie** w procesie o randze `root` (**niedozwolony** jest zapis pod adres `recv_data` w pozostałych procesach).
+  Gathers data provided by all processes into send_data
+  (treated as an array of uint8_t numbers of size count)
+  and performs a reduction of type op on elements with the same indices
+  from the send_data arrays of all processes (including root).
+  The result of the reduction, an array of uint8_t of size count,
+  is written to the address `recv_data` exclusively in the process with rank `root` (writing to `recv_data` address in other processes is not allowed).
 
-  Dostępne są następujące typy redukcji (wartości `enum`a `MIMPI_Op`):
-  - `MIMPI_MAX`: maksimum
-  - `MIMPI_MIN`: minimum
-  - `MIMPI_SUM`: suma
-  - `MIMPI_PROD`: produkt
+The following reduction types (values of the enum `MIMPI_Op`) are available:
 
-  Należy zwrócić uwagę na to, że wszystkie powyższe operacje na dostępnych typach danych
-  są przemienne i łączne i odpowiednio zoptymalizować `MIMPI_Reduce`.
+- MIMPI_MAX: maximum
+- MIMPI_MIN: minimum 
+- MIMPI_SUM: sum 
+- MIMPI_PROD: product
+It should be noted that all of the above operations on available data types
+are commutative and associative, so `MIMPI_Reduce` should be optimized accordingly.
 
-### Semantyka `MIMPI_Retcode`
+### Semantics of `MIMPI_Retcode`
 
-Patrz dokumentacja w kodzie `mimpi.h`:
+See: documentation in the `mimp.h` code:
 
-- dokumentacja `MIMPI_Retcode`,
-- dokumentacja poszczególnych procedur zwracających `MIMPI_Retcode`.
+- documentation of `MIMPI_Retcode`,
+- documentation of individual procedures returning `MIMPI_Retcode`.
 
-### Semantyka znaczników
+### Semantics of Tags
 
 Przyjmujemy konwencję:
 
-- `tag > 0` jest przeznaczony dla użytkowników biblioteki na własne potrzeby,
-- `tag = 0` oznacza `ANY_TAG`. Jego zastosowanie do `MIMPI_Recv` powoduje dopasowanie do dowolnego znacznika.
-Nie należy go używać w `MIMPI_Send` (skutek użycia jest niezdefiniowany).
-- `tag < 0` jest zarezerwowany na potrzeby implementujących bibliotekę i może być zastosowany do wewnętrznej komunikacji.
+We adopt the following convention:
 
-  W szczególności oznacza to, że programy użytkownika (np. nasze programy testowe) nigdy nie wywołają bezpośrednio procedury `MIMPI_Send` czy `MIMPI_Recv` ze znacznikiem `< 0`.
+- tag > 0 is intended for library users for their own purposes,
 
-## Komunikacja międzyprocesowa
+- tag = 0 denotes `ANY_TAG`. Its use in `MIMPI_Recv` causes matching to any tag.
+It should not be used in `MIMPI_Send` (the effect of its use is undefined).
 
-Standard MPI jest zaprojektowany z myślą o obliczeniach uruchamianych na superkomputerach.
-W związku z tym komunikacja między poszczególnymi procesami zazwyczaj odbywa się przez sieć
-i jest wolniejsza niż wymiana danych w obrębie jednego komputera.
+- tag < 0 is reserved for the library implementers and can be used for internal communication.
 
-Aby lepiej zasymulować środowisko działania prawdziwej biblioteki
-i tym samym zmierzyć się z jej problemami implementacyjnymi,
-komunikację między procesami należy przeprowadzić **wyłącznie**
-z użyciem, dostarczonych w bibliotece `channel.h`, kanałów.
-Biblioteka `channel.h` zapewnia następujące funkcje do obsługi kanałów:
+In particular, this means that user programs (e.g., our test programs) will never directly call `MIMPI_Send` or `MIMPI_Recv` with a tag < 0.
 
-- `void channels_init()` - inicjalizacja biblioteki kanałów
-- `void channels_finalize()` - finalizacja biblioteki kanałów
-- `int channel(int pipefd[2])` - utworzenie kanału
-- `int chsend(int __fd, const void *__buf, size_t __n)` - wysłanie wiadomości
-- `int chrecv(int __fd, void *__buf, size_t __nbytes)` - odebranie wiadomości
+## Interprocess Communication
+
+The MPI standard is designed for computations run on supercomputers.
+Therefore, communication between individual processes usually occurs over a network
+and is slower than data exchange within a single computer.
+
+To better simulate the environment of a real library's operation
+and thus address its implementation problems,
+interprocess communication must be conducted exclusively
+using the channels provided in the `channel.h` library.
+The channel.h library provides the following functions for handling channels:
+
+- void channels_init() - initialize the channel library
+- void channels_finalize() - finalize the channel library
+- int channel(int pipefd[2]) - create a channel 
+- int chsend(int __fd, const void *__buf, size_t __n) - send a message 
+- int chrecv(int __fd, void *__buf, size_t __nbytes) - receive a message
 
 `channel`, `chsend`, `chrecv` działają podobnie do `pipe`, `write` i `read` odpowiednio.
 Zamysł jest taki, że jedyna istotna (z perspektywy rozwiązania zadania)
@@ -246,212 +227,92 @@ różnica w zachowaniu funkcji zapewnionych przez `channel.h` jest
 taka, że mogą one mieć znacząco dłuższy czas wykonania od swoich oryginałów.
 W szczególności zapewnione funkcje:
 
-- posiadają taką samą sygnaturę jak oryginalne funkcje
-- podobnie tworzą wpisy w tablicy otwartych plików
-- gwarantują atomowość odczytów i zapisów do 512 bajtów włącznie
-- gwarantują posiadanie bufora o wielkości przynajmniej 4 KB
-- ... _(w razie niejasności należy zadać pytanie)_
+- have the same signature as the original functions
+- similarly create entries in the open file table
+- guarantee atomicity of reads and writes up to 512 bytes inclusive
+- guarantee the existence of a buffer of at least 4 KB in size
 
-**UWAGA:**
-Należy koniecznie wywołać następujące funkcje pomocnicze: `channels_init` z `MIMPI_Init`,
-zaś `channels_finalize` z `MIMPI_Finalize`.
 
-**Wszystkie** odczyty i zapisy na rzecz deskryptorów plików zwróconych przez funkcję `channel`
-należy wykonywać z użyciem `chsend` i `chrecv`.
-Dodatkowo, nie należy wywoływać żadnych funkcji systemowych modyfikujących własności plików jak `fcntl`
-na rzecz deskryptorów plików zwróconych przez funkcję `channel`.
+All reads and writes on file descriptors returned by the channel function must be performed using `chsend` and `chrecv`.
+Additionally, no system functions modifying file properties such as fcntl should be called on file descriptors returned by the channel function.
 
-Niezastosowanie się do powyższych zaleceń może skutkować **całkowitą utratą punktów.**
+It should be noted that from the guarantees provided for the `chsend` and `chrecv` functions,
+it does not follow that they will not process fewer bytes than requested. 
+This may happen if the requested size exceeds the guaranteed size of the channel buffer, 
+or if the amount of data in the input buffer is insufficient. Implementations must correctly handle such situations.
 
-Należy pamiętać, że z powyższych gwarancji dotyczących funkcji `chsend` oraz `chrecv`
-nie wynika, że nie przetworzą one mniejszej liczby bajtów niż żądana.
-Może się tak stać jeśli wielkość ta przekracza gwarantowany rozmiar bufora kanału,
-lub gdy ilość danych w buforze wejściowym jest niewystarczająca.
-Implementacje muszą poprawnie obsługiwać taką sytuację.
+## Notes
 
-## Uwagi
+### General
 
-### Ogólne
+- The `mimpirun` program or any functions from the `mimpi` library must not create named files in the file system.
+- The `mimpirun` program and functions from the `mimpi` library can use descriptors numbered from $[20, 1023]$ in any way.
+Additionally, it can be assumed that descriptors from this range are not occupied at the time of `mimpirun` program execution.
+- The `mimpirun` program or any functions from the `mimpi` library must not modify existing entries in the open file table
+from positions outside $[20, 1023]$.
+- The `mimpirun` program or any functions from the `mimpi` library must not perform any operations on files they did not open themselves
+(especially on STDIN, STDOUT, and STDERR).
+- Active or semi-active waiting is not allowed at any point.
+This means that no sleeping functions (sleep, usleep, nanosleep) or their timeout variants (such as select) should be used.
+Only events independent of time, such as the appearance of a message, should be waited for.
+Solutions will be tested for memory leaks and/or other resource leaks (unclosed files, etc.). 
+Carefully trace and test paths that may lead to leaks.
+It can be assumed that corresponding i-th calls to group communication functions in different processes are of the same types
+(i.e., the same functions) and have the same parameter values count, root, and op (if the current function type has a given parameter).
+In the case of an error in a system function, the calling program should terminate with a nonzero exit code, e.g., by using the provided `ASSERT_SYS_OK` macro.
+If programs $prog$ use the library in a way that is inconsistent with the guarantees listed in this document,
+any action can be taken (such situations will not be checked).
 
-- Program `mimpirun` ani żadna z funkcji z biblioteki `mimpi` **nie mogą** tworzyć nazwanych plików w systemie plików.
-- Program `mimpirun` i funkcje z biblioteki `mimpi` mogą korzystać z deskryptorów
-  o numerach należących do przedziału $[ 20, 1023 ]$ w dowolny sposób.
-  Dodatkowo można zakładać, że deskryptory z powyższego zakresu nie są zajęte w momencie
-  uruchomienia programu `mimpirun`.
-- Program `mimpirun` ani żadna z funkcji z biblioteki `mimpi` **nie mogą** modyfikować istniejących
-  wpisów z tablicy otwartych plików z pozycji spoza $[ 20, 1023 ]$.
-- Program `mimpirun` ani żadna z funkcji z biblioteki `mimpi` **nie mogą** wykonywać żadnych
-  operacji na plikach, których same nie otworzyły (w szczególności na `STDIN`, `STDOUT` i `STDERR`).
-- W żadnym miejscu nie można stosować aktywnego ani półaktywnego oczekiwania.
-  - Tym samym nie należy korzystać z żadnej funkcji usypiającej wykonanie programu
-  na określony czas (`sleep`, `usleep`, `nanosleep`) ani też wariantów funkcji z timeout'em (jak np. `select`).
-  - Należy czekać **wyłącznie** na wydarzenia niezależne od czasu np. pojawienie się wiadomości.
-- Rozwiązania będą testowane pod kątem wycieków pamięci i/lub innych zasobów (niezamkniętych plików itd.).
-  Należy uważnie prześledzić i przetestować ścieżki mogące prowadzić do wycieków.
-- Można założyć, że odpowiadające i-te wywołania funkcji do komunikacji grupowej
-  w różnych procesach są tych samych typów (są to te same funkcje) i mają takie same wartości parametrów `count`, `root` i `op`
-  (jeśli bieżący typ funkcji posiada dany parametr).
-- W przypadku błędu w funkcji systemowej należy zakończyć wywołujący ją program z niezerowym kodem wyjściowym np.
-  poprzez użycie dostarczonego makra `ASSERT_SYS_OK`.
-- W przypadku, gdy programy $prog$ korzystają z biblioteki w sposób niezgodny z wymienionymi w tej treści gwarancjami,
-  można postąpić dowolnie (nie będziemy takich sytuacji sprawdzać).
+### `MIMPI` Library
 
-### biblioteka `MIMPI`
+- The implemented functions do not need to be _thread-safe_, 
+meaning it can be assumed that they are not called from multiple threads simultaneously.
+- Implementations of functions should be reasonably efficient,
+meaning they should not add significant overhead beyond the expected execution time 
+(e.g., due to waiting for a message) even under extreme loads (e.g., handling hundreds of thousands of messages).
+- Calling a procedure other than `MIMPI_Init` outside of an MPI block has undefined behavior.
+- Calling `MIMPI_Init` multiple times has undefined behavior.
+  We guarantee that `channels_init` will set the handling of the `SIGPIPE` signal to be ignored.
+This will facilitate dealing with the requirement for `MIMPI_Send` to return `MIMPI_ERROR_REMOTE_FINISHED`
+in the appropriate situation.
 
-- Implementowane funkcje nie muszą być _threadsafe_, tzn. można założyć, że nie są wołane z wielu wątków równocześnie.
-- Implementacje funkcji powinny być rozsądnie efektywne,
-  tzn. niewystawione na ekstremalne obciążenie (np. obsługę setek tysięcy wiadomości)
-  nie powinny dodawać poza oczekiwany czas działania (np. wynikający z oczekiwania na wiadomość)
-  narzutu rzędu dziesiątek milisekund (i większego).
-- Wykonanie procedury innej niż `MIMPI_Init` poza blokiem MPI ma niezdefiniowane działanie.
-- Wielokrotne wywołanie procedury `MIMPI_Init` ma niezdefiniowane działanie.
-- Dajemy gwarancję, że `channels_init` ustawi obsługę sygnału `SIGPIPE` jako ignorowany. Ułatwi to poradzenie sobie z wymaganiem,
-  by `MIMPI_Send` zwrócił `MIMPI_ERROR_REMOTE_FINISHED` w stosownej sytuacji.
-
-## Dopuszczone języki i biblioteki
-
-Wymagamy użycia języka C w wersji `gnu11` (samo `c11` nie daje bowiem dostępu do wielu przydatnych funkcji z biblioteki standardowej).
-Nie pozostawiamy wyboru, bowiem zadanie ma m.in. pogłębić umiejętności posługiwania się językiem C.
-
-Można korzystać ze standardowej biblioteki języka C (`libc`), biblioteki `pthread`, a także funkcjonalności dostarczanych przez system (zadeklarowanych w `unistd.h` itp.).
-
-**Niedozwolone**  jest korzystanie z innych bibliotek zewnętrznych.
-
-Mozna zapożyczać dowolny kod z laboratoriów. Wszelkie inne ewentualne zapożyczenia kodu należy odpowiednio komentować z podaniem źródła.
-
-## Opis paczki
+## Package Description
 
 Paczka zawiera następujące pliki niebędące częścią rozwiązania:
 
-- `examples/*`: proste przykładowe programy korzystające z biblioteki `mimpi`
-- `tests/*`: testy sprawdzające różne konfiguracje uruchomień przykładowych programów z użyciem `mimpirun`
-- `assignment.md`: ten opis
-- `channel.h`: plik nagłówkowy deklarujący funkcje do obsługi komunikacji międzyprocesowej
-- `channel.c`: przykładową implementację `channel.h`
-- `mimpi.h`: plik nagłówkowy deklarujący funkcje biblioteki `MIMPI`
-- `Makefile`: przykładowy plik automatyzujący kompilację `mimpirun`, programów przykładowych i uruchamianie testów
-- `self`: pomocniczy skrypt do uruchamiania testów dostarczonych w zadaniu
-- `test`: skrypt lokalnie wykonujący wszystkie testy z katalogu `tests/`
-- `test_on_public_repo`: skrypt wykonujący testy według poniżej przedstawionego [schematu](#schemat-oceniania)
-- `files_allowed_for_change`: skrypt listujący pliki, które wolno modyfikować
-- `template_hash`: plik specyfikujący wersję szablonu, na podstawie którego zostało przygotowane rozwiązanie
+The package contains the following files that are not part of the solution:
 
-Szablony do uzupełnienia:
+- `examples/*`: simple example programs using the mimpi library
+- `tests/*`: tests checking various configurations of running example programs using mimpirun
+- `assignment.md`: this description
+- `channel.h`: header file declaring functions for inter-process communication handling
+- `channel.c`: example implementation of channel.h
+- `mimpi.h`: header file declaring functions of the MIMPI library
+- `Makefile`: sample file automating the compilation of mimpirun, example programs, and running tests
+- `self`: helper script to run tests provided in the task
+- `test`: script executing all tests from the tests/ directory locally
+- `test_on_public_repo`: script executing tests according to the grading scheme below
+- `template_hash`: file specifying the version of the template used to prepare the solution
 
-- `mimpi.c`: plik zawierający szkielety implementacji funkcji biblioteki `MIMPI`
-- `mimpirun.c`: plik zawierający szkielet implementacji programu `mimpirun`
-- `mimpi_common.h`: plik nagłówkowy przeznaczony do deklaracji wspólnych funkcjonalności biblioteki `MIMPI` i programu `mimpirun`
-- `mimpi_common.c`: plik przeznaczony do implementacji wspólnych funkcjonalności biblioteki `MIMPI` i programu `mimpirun`
+**Templates to be filled-in**:
 
-### Pomocne komendy
+- mimpi.c: file containing skeletons of implementations for MIMPI library functions
+- mimpirun.c: file containing skeleton implementation for the mimpirun program
+- mimpi_common.h: header file for declaring common functionalities of the MIMPI library and mimpirun program
+- mimpi_common.c: file for implementing common functionalities of the MIMPI library and mimpirun program
 
-- zbudowanie `mimpirun` i wszystkich przykładów z katalogu `examples/`: `make`
-- uruchomienie lokalnych testów: `./test`
-- uruchomienie testów według oficjalnego schematu: `./test_on_public_repo`
-  
-  Powyższa komenda pozwala upewnić się, że rozwiązanie spełnia wymogi techniczne wyszczególnione w [schemacie oceniania](#schemat-oceniania).
-- wypisanie wszystkich plików otwartych przez procesy uruchomione przez `mimpirun`: np. `./mimpirun 2 ls -l /proc/self/fd`
-- śledzenie błędów pamięci, wycieków pamięci i zasobów:
-  
-  Przydatne może być narzędzie `valgrind`, w szczególności flagi:
-  - `--track-origins=yes`
-  - `--track-fds=yes`
-  
-  Mający węższy zakres działania, ale również pomocny do debugowania może być _ASAN_ (Address Sanitizer).
-    Uruchamia się go podaniem flagi `-fsanitize=address` do `gcc`.
+### Useful commands
 
-## Oczekiwane rozwiązanie
+- Build `mimpirun` and all examples from the examples/ directory: `make`
+- Run local tests: `./test` 
+- Run tests according to the official grading scheme: `./test_on_public_repo `
+- The above command helps ensure that the solution meets the technical requirements outlined in the grading scheme. 
+- List all files opened by processes launched by `mimpirun`: e.g., `./mimpirun 2 ls -l /proc/self/fd `
+  - Track memory errors, leaks, and resources:
+    - The *valgrind* tool can be useful, especially with flags like:
+    - `--track-origins=yes`
+    - `--track-fds=yes` 
+- Another useful tool for debugging is ASAN (Address Sanitizer).
+You can enable it by passing the `-fsanitize=address` flag to `gcc`.
 
-### Wariant standardowy (zalecany, prosty i bezpieczny)
 
-Aby ukończyć zadanie należy:
-
-1) Uzupełnić szablon rozwiązania według specyfikacji, zmieniając jedynie pliki wymienione w `files_allowed_for_change` (w szczególności należy uzupełnić przynajmniej pliki `mimpi.c` i `mimpirun.c`).
-2) Upewnić się, że rozwiązanie pasuje do wymaganego [schematu oceniania](#schemat-oceniania) wywołując `./test_on_public_repo`
-3) Wyeksportować rozwiązanie z użyciem `make assignment.zip && mv assignment.zip ab123456.zip`
-   (zamieniając `ab123456` na Twój login ze students)
-   i wgrać na czas wynikowe archiwum do moodle.
-
-### Wariant niestandardowy
-
-Jeśli komuś zapewniony szablon się nie podoba i jest bardzo zmotywowany można go zmienić.
-Najpierw należy skomunikować się z autorami zadania celem wstępnej weryfikacji potrzeby.
-Po pozytywnej weryfikacji trzeba kolejno:
-
-1) Stworzyć fork publicznego repozytorium z rzeczonym szablonem.
-2) Zaktualizować stworzonego fork'a dodanymi przez siebie poprawkami **upewniając się, że nie zawierają one fragmentów rozwiązania**
-3) Otworzyć _pull request_ do głównego repozytorium, opisując zmiany.
-4) W procesie dyskusji poprawki lub nowy szablon mogą zostać zaakceptowane albo odrzucone.
-5) Dalej pracować korzystając z nowo-stworzonego szablonu (przełączając się na odpowiedni branch)
-
-Istotne jest aby zaktualizowany szablon pasował do poniższego schematu oceniania,
-w szczególności posiadał odpowiednio zaktualizowany plik `template_hash`.
-
-#### O testach studenckich
-
-Polecenie `make` automatycznie próbuje zbudować
-wszystkie programy z `examples/` do `examples_build`.
-Dalej wywołanie `./test` uruchamia wszystkie rozpoznawane testy z katalogu `tests/`.
-Przyjęta jest następująca konwencja:
-
-- pliki `*.self` to specjalny rodzaj testów uruchamiany z użyciem dostarczonego skryptu pomocniczego `self`.
-  W pierwszej linijce specyfikują one polecenie do uruchomienia.
-  Natomiast od 3-ciej linijki do końca pliku znajduje się oczekiwana wartość `STDOUT`, jaką powinno wygenerować wykonanie powyższego polecenia.
-- pliki `*.sh` to dowolne skrypty shell'owe. Mogą one wykonywać dowolną logikę.
-  Powinny jedynie zakończyć się kodem $0$ w przypadku sukcesu (przejścia testu) i niezerowym kodem w przypadku wykrycia błedu.
-
-W przypadku przygotowania przez siebie własnych testów pasujących do powyższego schematu zachęcamy do podzielenia się nimi z innymi.
-W tym celu należy tylko w jakiś sposób przekazać je autorom zadania (najlepiej _pull request'em_).
-Aby zachęcić Państwa do tego wysiłku, postaramy się uruchomić tak opublikowane testy na rozwiązaniu wzorcowym
-i dać informację zwrotną gdyby były niepoprawne.
-
-## Schemat oceniania
-
-Wgrane przez Państwa rozwiązania będą budowane i testowane według następującego schematu:
-
-1) Paczka `zip` z rozwiązaniem o odpowiedniej nazwie `ab123456.zip` (podstaw swój login ze students)
-   zostanie pobrana z moodle i rozpakowana.
-2) Zostanie stworzony czysty klon $K$ publicznego repozytorium zawierającego udostępniony Państwu szablon.
-3) W $K$ zostanie wybrana gałąź na podstawie wartości `template_hash` z Państwa rozwiązania.
-4) Do $K$ zostaną skopiowane te pliki z Państwa rozwiązania, które są wymienione w `files_allowed_for_change` z **wersji** z $K$
-5) Do $K$ zostanie skopiowany przygotowany przez nas zestaw testów (odpowiednie pliki w `examples/` i `tests/`).
-6) W $K$ zostanie wywołane `make` celem zbudowania Państwa rozwiązania i wszystkich przykładów.
-7) W $K$ zostanie wywołane `./test`
-8) Rozwiązanie zostanie ocenione na podstawie zestawu testów, które przeszło Państwa rozwiązanie.
-
-Wykonanie bez błędów powyższego procesu budowania
-i przejście następujących automatycznych testów:
-
-- hello
-- send_recv
-
-jest warunkiem koniecznym do uzyskania niezerowej liczby punktów.
-Aby sprawdzić zgodność swojego rozwiązania z powyższym schematem oceniania należy użyć skryptu `./test_on_public_repo`.
-Zachęcamy do skorzystania.
-
-**Uwaga:** W przypadku rozbieżności w wynikach powyższego procesu brane pod uwagę będzie działanie na serwerze `students`.
-
-## Oceniane komponenty rozwiązania
-
-**Uwaga**: poniższa punktacja jest **wyłącznie** orientacyjna i może ulec dowolnym zmianom.
-Jej celem jest łatwiejsze oszacowanie trudności/złożoności danej funkcjonalności.
-
-### Podstawa: (3p)
-
-- implementacja programu `mimpirun` + procedur `MIMPI_Init` i `MIMPI_Finalize` + przechodzący poprawnie przykład/test `hello` (1p)
-- implementacja funkcji punkt-punkt (przy założeniu wiadomości o wielkości do 500B) (1p)
-- implementacja funkcji grupowych (wielkość wiadomości jw.) (1p)
-
-### Usprawnienia (7p)
-
-- efektywne (logarytmiczne) funkcje grupowe (2p)
-  - `MIMPI_Barrier` (1p)
-  - `MIMPI_Bcast` oraz `MIMPI_Reduce` (1p)
-- (`MIMPI_Recv`::Usprawnienie1) dowolnie duże wiadomości (dowolnie ponad 500B) (1p)
-- (`MIMPI_Recv`::Usprawnienie2) obsługa dowolnej kolejności przesyłania wiadomości (filtrowanie po tagach, rozmiarze), w tym obsługa tagu `MIMPI_ANY_TAG` (1p)
-- (`MIMPI_Recv`::Usprawnienie3) niezapychalne kanały (1p)
-  - brak górnego ograniczenia na wielkość danych do momentu zablokowania procesu wysyłającego
-  - brak oczekiwania przy wywołaniu `MIMPI_Send`
-- (`MIMPI_Recv`::Usprawnienie4) detekcja zakleszczeń par procesów (2p)
-
-Usprawnienia zapisaliśmy w kolejności, w jakiej sugerujemy ich priorytetyzację.
