@@ -25,7 +25,7 @@ The `mimpirun` program performs the following actions sequentially
 1) Prepares the environment (the implementer should definitely decide what this means).
 2) Launches $n$ copies of the program $prog$, each in a separate process.
 3) Waits for the completion of all created processes.
-3) Exits.
+4) Exits.
 
 ## $Prog$ assumptions
 - The programs $prog$ can once during their execution enter an MPI block.
@@ -65,7 +65,7 @@ Returns the number of processes $prog$ launched using the `mimpirun` program (sh
 
 
 - `void MIMPI_World_rank()`
-Returns a unique identifier within the group of processes launched by mimpirun.
+Returns a unique identifier within the group of processes launched by `mimpirun`.
 Identifiers should be consecutive natural numbers from $0$ to $n-1$.
 
 ### Point-to-point communication procedures
@@ -107,17 +107,20 @@ while waiting for `MIMPI_Recv`.
    The recipient should process received messages concurrently with performing other tasks to prevent message sending channels from overflowing. 
    In other words, sending a large number of messages is not blocking even if the receiving target does not process them
    (because they go to a growing buffer).
-    **Enhancement4**: 
+  - **Enhancement4**: 
     Deadlock is a situation where a part of the system has reached a state where there is no possibility for further change 
     (there exists no sequence of possible future actions of processes that could resolve this deadlock). 
     Deadlock of a pair of processes is a situation where the deadlock arises from the current state of two processes 
     (considering whether they can be interrupted, we allow any actions of processes outside the pair - even those that are not allowed in their current state).
     Examples of certain situations constituting deadlocks of pairs of processes in our system include:
-    - A pair of processes has mutually executed `MIMPI_Recv` on each other without previously sending a message using `MIMPI_Send` that could end the waiting for either of them.
-    - One of the processes is waiting for a message from a process that is already waiting for synchronization related to the invocation of a procedure for group communication.
+    - A pair of processes has mutually executed `MIMPI_Recv` on each other without previously sending a message using 
+    `MIMPI_Send` that could end the waiting for either of them.
+    - One of the processes is waiting for a message from a process that is already waiting for synchronization related to the
+    invocation of a procedure for group communication.
     
     As part of this enhancement, at least detection of deadlocks of type 1) should be implemented. 
-    Detection of deadlocks of other types will not be checked (but can be implemented). Deadlocks should not be reported in situations where they are not present.
+    Detection of deadlocks of other types will not be checked (but can be implemented). 
+    Deadlocks should not be reported in situations where they are not present.
     In case a deadlock is detected, the active invocation of the library function `MIMPI_Recv` in both processes of the detected deadlock pair should immediately terminate,
     returning the error code `MIMPI_ERROR_DEADLOCK_DETECTED`.
     In the event of multiple deadlocked pairs occurring simultaneously, the invocation of the library function `MIMPI_Recv` 
@@ -132,26 +135,33 @@ The behavior when deadlock detection is enabled only in some processes of the cu
 
 #### General Requirements
 
-Each collective communication procedure $p$ serves as a synchronization point for all processes, meaning that instructions following the $i$-th invocation of $p$ in any process are executed after every instruction preceding the $i$-th invocation of $p$ in any other process.
+Each collective communication procedure $p$ serves as a synchronization point for all processes, meaning that instructions 
+following the $i$-th invocation of $p$ in any process are executed after every instruction preceding the $i$-th invocation of $p$ in any other process.
 
-If synchronization of all processes cannot be completed because one of the processes has already exited the MPI block, calling `MIMPI_Barrier` in at least one process should result in the error code `MIMPI_ERROR_REMOTE_FINISHED`.
-If the process in which this occurs terminates in response to the error, calling `MIMPI_Barrier` should result in the error in at least one subsequent process.
+If synchronization of all processes cannot be completed because one of the processes has already exited the MPI block,
+calling `MIMPI_Barrier` in at least one process should result in the error code `MIMPI_ERROR_REMOTE_FINISHED`.
+If the process in which this occurs terminates in response to the error, calling `MIMPI_Barrier` should result in the error
+in at least one subsequent process.
 By repeating the above behavior, we should reach a situation where each process exits the barrier with an error.
 
 #### Efficiency
 
 Each collective communication procedure $p$ should be implemented efficiently.
-Specifically, assuming deadlock detection is inactive, we require that from the time $p$ is invoked by the last process to the time $p$ is completed in the last process, no more than $3\left \lceil\log_2(n+1)-1 \right \rceil t+\epsilon$ time where:
+Specifically, assuming deadlock detection is inactive, we require that from the time $p$ is invoked by the last process 
+to the time $p$ is completed in the last process, no more than $3\left \lceil\log_2(n+1)-1 \right \rceil t+\epsilon$ time where:
 
 - $n$ is a number of processes
-- $t$  is the longest time to transmit a single message - the sum of the execution times of corresponding `chsend` and `chrecv` calls. Additional information can be found in the example implementation `channel.c` and in the provided tests in the `tests/effectiveness` directory.
+- $t$  is the longest time to transmit a single message - the sum of the execution times of corresponding `chsend` and `chrecv` calls.
+Additional information can be found in the example implementation `channel.c` and in the provided tests in the `tests/effectiveness` directory.
 - $\epsilon$ is a small constant (on the order of at most milliseconds) that does not depend on $t$.
 
 Additionally, for an implementation to be considered efficient, transmitted data should not be burdened with excessive metadata.
-In particular, we expect that collective functions invoked for data sizes smaller than 256 bytes will invoke `chsend` and `chrecv` for packets of size smaller than or equal to 512 bytes.
+In particular, we expect that collective functions invoked for data sizes smaller than 256 bytes will invoke `chsend` and `chrecv` 
+for packets of size smaller than or equal to 512 bytes.
 
 Tests from the `tests/effectiveness directory` included in the package verify the above-defined notion of efficiency.
-Passing them successfully is a necessary condition (though not necessarily sufficient) to earn points for an efficient implementation of collective functions.
+Passing them successfully is a necessary condition (though not necessarily sufficient) to earn points for an efficient
+implementation of collective functions.
 
 #### Available Procedures
 
@@ -190,8 +200,6 @@ See: documentation in the `mimp.h` code:
 
 ### Semantics of Tags
 
-Przyjmujemy konwencję:
-
 We adopt the following convention:
 
 - tag > 0 is intended for library users for their own purposes,
@@ -221,12 +229,11 @@ The channel.h library provides the following functions for handling channels:
 - int chsend(int __fd, const void *__buf, size_t __n) - send a message 
 - int chrecv(int __fd, void *__buf, size_t __nbytes) - receive a message
 
-`channel`, `chsend`, `chrecv` działają podobnie do `pipe`, `write` i `read` odpowiednio.
-Zamysł jest taki, że jedyna istotna (z perspektywy rozwiązania zadania)
-różnica w zachowaniu funkcji zapewnionych przez `channel.h` jest
-taka, że mogą one mieć znacząco dłuższy czas wykonania od swoich oryginałów.
-W szczególności zapewnione funkcje:
 
+`channel`, `chsend`, `chrecv` operate similarly to pipe, write, and read, respectively.
+The idea is that the only significant (from the perspective of solving the task) difference in the behavior of functions provided by `channel.h`
+is that they may have significantly longer execution times than their originals.
+In particular, the provided functions:
 - have the same signature as the original functions
 - similarly create entries in the open file table
 - guarantee atomicity of reads and writes up to 512 bytes inclusive
